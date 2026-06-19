@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Storm chasing simulator TORNADOchs</title>
+    <style>
+        body {
+            margin: 0; padding: 0; overflow: hidden;
+            background: linear-gradient(to bottom, #2c3e50, #7f8c8d);
+            font-family: 'Arial', sans-serif; color: white;
+            user-select: none; -webkit-user-select: none;
+        }
+
+        canvas { display: block; width: 100vw; height: 100vh; }
+
+        .screen {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            display: none; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 10;
+            overflow-y: auto;
+            background: rgba(44, 62, 80, 0.95);
+        }
+
+        .active { display: flex !important; }
+
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            pointer-events: none; z-index: 5;
+        }
+
+        .hud-text {
+            position: absolute; top: 15px; font-size: 22px; font-weight: bold;
+            text-shadow: 2px 2px 4px #000;
+        }
+
+        #money-display { left: 20px; z-index: 10; }
+        #intercepts-display { left: 20px; top: 45px; font-size: 16px; color: #f39c12; z-index: 10; }
+        #hp-display { right: 20px; color: #ff4757; z-index: 10; }
+        #boss-timer-display { width: 100vw; text-align: center; left: 0; top: 15px; font-size: 28px; color: #ff9f43; display: none; }
+
+        .btn {
+            background: #e74c3c; color: white; border: 3px solid #c0392b;
+            padding: 10px 25px; font-size: 18px; font-weight: bold;
+            border-radius: 10px; cursor: pointer; margin: 10px;
+            pointer-events: auto; text-transform: uppercase;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: transform 0.1s;
+        }
+        
+        .btn:active { transform: scale(0.95); }
+        .btn:disabled { background: #7f8c8d; border-color: #34495e; cursor: not-allowed; }
+
+        .input-field {
+            padding: 12px; margin: 10px; border-radius: 8px; 
+            border: 2px solid #34495e; font-size: 18px; 
+            width: 250px; text-align: center; outline: none;
+            background: rgba(255, 255, 255, 0.9); color: #2c3e50;
+            font-weight: bold;
+        }
+
+        #deploy-btn {
+            position: absolute; top: 75px; left: 20px;
+            background: #f1c40f; border-color: #f39c12; color: black; 
+            width: 140px; text-align: center; opacity: 0.5; pointer-events: auto;
+        }
+        #deploy-btn.deployed { background: #2ecc71; border-color: #27ae60; color: white; opacity: 0.6; }
+        #deploy-btn.cooldown { background: #7f8c8d; border-color: #34495e; color: #bdc3c7; opacity: 0.4; }
+
+        #logo { max-width: 90%; height: auto; margin-bottom: 20px; filter: drop-shadow(0 0 10px rgba(255,255,255,0.5)); }
+        #warning-sign { position: absolute; top: 25%; right: 10%; max-width: 40%; display: none; z-index: 8; animation: blink 0.6s infinite alternate; }
+
+        @keyframes blink { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0.5; transform: scale(1.1); } }
+
+        .shop-container { display: flex; flex-direction: column; gap: 15px; max-height: 65vh; overflow-y: auto; padding: 10px; width: 90%; max-width: 400px; }
+        .shop-item { background: rgba(0,0,0,0.5); padding: 15px; border-radius: 15px; text-align: center; }
+        .shop-item img { height: 75px; display: block; margin: 0 auto 10px auto; object-fit: contain; }
+        .shop-item h3 { margin: 5px 0; }
+    </style>
+</head>
+<body>
+
+    <audio id="music" src="TornadoFunkHARDTEKK.mp3" loop></audio>
+
+    <div id="ui-layer">
+        <div id="money-display" class="hud-text" style="display:none;">$0</div>
+        <div id="intercepts-display" class="hud-text" style="display:none;">Caught: 0 / 500</div>
+        <div id="boss-timer-display" class="hud-text">BOSS: 60.0с</div>
+        <div id="hp-display" class="hud-text" style="display:none;">STRENGTH: 100%</div>
+        <img id="warning-sign" src="https://i.ibb.co/24SX14c/Picsart-26-06-15-12-25-16-221.png" alt="Внимание">
+        <button id="deploy-btn" class="btn" style="display:none;" onclick="toggleDeploy()">Deploy</button>
+    </div>
+
+    <div id="main-menu" class="screen active" style="background: none;">
+        <img id="logo" src="https://i.ibb.co/Z6f0DKHw/Picsart-26-06-15-12-25-28-970.png" alt="Логотип">
+        <button class="btn" onclick="startGame()">Start chasing</button>
+        <button class="btn" onclick="openShop()">Shop</button>
+        <button class="btn" style="background: #e67e22; border-color: #d35400;" onclick="openRewards()">Daily gifts 🎁</button>
+        <button class="btn" style="background: #3498db; border-color: #2980b9;" onclick="openAccount()">Profile</button>
+        <button class="btn" style="background: #9b59b6; border-color: #8e44ad;" onclick="openMiniGame()">Mini game</button>
+    </div>
+
+    <div id="rewards-menu" class="screen">
+        <h1 style="text-shadow: 2px 2px 4px #000;">DAILY GIFTS</h1>
+        <h3 id="reward-days-passed" style="color: #f1c40f;">Day: 1 / 30</h3>
+        <div style="background: rgba(0,0,0,0.6); padding: 20px; border-radius: 15px; text-align: center; margin: 15px; width: 280px;">
+            <p>Your gift:</p>
+            <h2 id="reward-desc" style="color: #2ecc71; margin: 10px 0;">$500</h2>
+            <img id="reward-img" src="" style="height: 80px; display: none; margin: 10px auto; object-fit: contain;">
+        </div>
+        <button id="claim-reward-btn" class="btn" style="background: #2ecc71; border-color: #27ae60;" onclick="claimDailyReward()">Claim</button>
+        <button class="btn" style="background: #34495e; border-color: #2c3e50;" onclick="closeRewards()">Back</button>
+    </div>
+
+    <div id="mg-menu" class="screen">
+        <h1 style="text-shadow: 2px 2px 4px #000; margin-bottom: 5px;">CATCH LIGHTNING</h1>
+        <p style="margin: 5px; color: #bdc3c7;">CLICK! Time: <span id="mg-time" style="color:#ff9f43; font-weight:bold;">15</span>с</p>
+        <h2 id="mg-score" style="color: #f1c40f; margin: 5px;">Score: 0</h2>
+        <div id="mg-zone" style="position: relative; width: 280px; height: 280px; background: rgba(0,0,0,0.6); border: 4px solid #9b59b6; border-radius: 15px; margin: 10px; overflow: hidden;">
+            <div id="mg-target" style="position: absolute; width: 50px; height: 50px; background: #f1c40f; border-radius: 50%; cursor: pointer; display: none; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 0 15px #f1c40f;" onclick="hitLightning()">⚡</div>
+        </div>
+        <button id="mg-start-btn" class="btn" style="background: #2ecc71; border-color: #27ae60;" onclick="startMiniGame()">Start</button>
+        <button id="mg-back-btn" class="btn" style="background: #34495e; border-color: #2c3e50;" onclick="closeMiniGame()">Back</button>
+    </div>
+
+    <div id="account-menu" class="screen">
+        <h1 style="text-shadow: 2px 2px 4px #000; margin-bottom: 10px;">Chaser's Profile</h1>
+        <h2 id="profile-name" style="color: #f1c40f; margin-bottom: 5px;">Player</h2>
+        
+        <div style="background: rgba(0,0,0,0.4); padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 15px;">
+            <p style="margin: 0 0 10px 0; color: #bdc3c7;">Change name (Price: $5,000)</p>
+            <input type="text" id="change-nick-input" class="input-field" placeholder="New name" maxlength="12">
+            <button class="btn" style="background: #2ecc71; border-color: #27ae60; font-size: 15px; padding: 8px 15px;" onclick="changeNickname()">Change name</button>
+        </div>
+
+        <div style="background: rgba(41, 128, 185, 0.2); padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 15px; border: 2px solid #2980b9;">
+            <p style="margin: 0 0 10px 0; color: #bdc3c7;">Secret codes</p>
+            <input type="text" id="promo-code-input" class="input-field" placeholder="Enter code">
+            <button class="btn" style="background: #3498db; border-color: #2980b9; font-size: 15px; padding: 8px 15px;" onclick="activatePromo()">Activate code</button>
+        </div>
+
+        <div style="background: rgba(192, 41, 43, 0.2); padding: 15px; border-radius: 12px; text-align: center; border: 2px dashed #c0392b;">
+            <p style="margin: 0 0 5px 0; color: #ff7675;">Danger zone: Delete progress</p>
+            <input type="text" id="reset-pass" class="input-field" placeholder="Write word 'yes' to clear">
+            <button class="btn" style="font-size: 15px; padding: 8px 15px;" onclick="resetProgress()">Clear all progress</button>
+        </div>
+
+        <button class="btn" style="background: #34495e; border-color: #2c3e50; margin-top: 15px;" onclick="closeAccount()">Back</button>
+    </div>
+
+    <div id="shop-menu" class="screen">
+        <h1 style="text-shadow: 2px 2px 4px #000; margin-top: 20px;">Shop</h1>
+        <h2 id="shop-money" style="color: #2ecc71;">$0</h2>
+
+        <div class="shop-container">
+            <div class="shop-item">
+                <img src="https://i.ibb.co/4vPhDmG/Picsart-26-06-15-12-43-57-973.png">
+                <h3>Box</h3>
+                <button class="btn" id="btn-equip-box" onclick="equipCar('box')">Select</button>
+            </div>
+
+            <div class="shop-item" id="shop-item-tiv1">
+                <img src="https://i.ibb.co/JRMfszjC/Picsart-26-06-18-12-31-42-121.png">
+                <h3>TIV 1</h3>
+                <button class="btn" id="btn-buy-tiv1" onclick="buyCar('tiv1', 500000)">Buy (500k$)</button>
+                <button class="btn" id="btn-equip-tiv1" style="display:none;" onclick="equipCar('tiv1')">Select</button>
+            </div>
+
+            <div class="shop-item">
+                <img src="https://i.ibb.co/CsV0F2cW/Picsart-26-06-15-20-36-50-531.png">
+                <h3>Bath</h3>
+                <button class="btn" id="btn-buy-bath" onclick="buyCar('bath', 100000)">Buy (100k$)</button>
+                <button class="btn" id="btn-equip-bath" style="display:none;" onclick="equipCar('bath')">Select</button>
+            </div>
+
+            <div class="shop-item">
+                <img src="https://i.ibb.co/5xGYzS6N/Picsart-26-06-14-22-09-50-949.png">
+                <h3>Dominator 2</h3>
+                <button class="btn" id="btn-buy-dom" onclick="buyCar('dominator', 20000000)">Buy (20M$)</button>
+                <button class="btn" id="btn-equip-dom" style="display:none;" onclick="equipCar('dominator')">Select</button>
+            </div>
+
+            <div class="shop-item">
+                <img src="https://i.ibb.co/cGdt1s6/Picsart-26-06-14-22-08-51-635.png">
+                <h3>TIV 2</h3>
+                <button class="btn" id="btn-buy-tiv" onclick="buyCar('tiv', 99000000)">Buy (99M$)</button>
+                <button class="btn" id="btn-equip-tiv" style="display:none;" onclick="equipCar('tiv')">Select</button>
+            </div>
+
+            <div class="shop-item" id="shop-item-tiv1gold" style="display: none;">
+                <img src="https://i.ibb.co/mF2xP8gf/Picsart-26-06-18-12-33-28-441.png">
+                <h3>TIV 1 (Gold)</h3>
+                <p style="color: #f1c40f; font-size: 12px;">Exclusive skin!</p>
+                <button class="btn" id="btn-equip-tiv1gold" onclick="equipCar('tiv1_gold')">Select</button>
+            </div>
+
+            <div class="shop-item">
+                <img src="https://i.ibb.co/Rk4mYdzB/Picsart-26-06-18-12-12-48-758.png">
+                <h3>TIV 3</h3>
+                <p style="color: #ff9f43; font-size: 12px;">Block boss's magma</p>
+                <button class="btn" id="btn-buy-tiv3" onclick="buyCar('tiv3', 200000000)">Buy (200M$)</button>
+                <button class="btn" id="btn-equip-tiv3" style="display:none;" onclick="equipCar('tiv3')">Select</button>
+            </div>
+
+            <div class="shop-item" id="shop-item-tiv2diamond" style="display: none;">
+                <img src="https://i.ibb.co/dwDqnbZ7/Picsart-26-06-18-12-38-08-578.png">
+                <h3>Diamond TIV 2</h3>
+                <p style="color: #3498db; font-size: 12px;">Secret</p>
+                <button class="btn" id="btn-equip-tiv2diamond" onclick="equipCar('tiv2_diamond')">Select</button>
+            </div>
+        </div>
+        <button class="btn" style="background: #34495e; border-color: #2c3e50; margin-top: 15px;" onclick="closeShop()">Back</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        document.addEventListener('click', function() {
+            let bgMusic = document.getElementById('music');
+            if(bgMusic.paused) { bgMusic.play().catch(e => console.log("Audio play prevented")); }
+        }, { once: true });
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+
+        const UI = {
+            moneyDisplay: document.getElementById('money-display'),
+            interceptsDisplay: document.getElementById('intercepts-display'),
+            bossTimerDisplay: document.getElementById('boss-timer-display'),
+            hpDisplay: document.getElementById('hp-display'),
+            shopMoney: document.getElementById('shop-money'),
+            deployBtn: document.getElementById('deploy-btn'),
+            warningSign: document.getElementById('warning-sign'),
+            mainMenu: document.getElementById('main-menu'),
+            shopMenu: document.getElementById('shop-menu'),
+            accountMenu: document.getElementById('account-menu'),
+            profileName: document.getElementById('profile-name'),
+            resetPass: document.getElementById('reset-pass'),
+            changeNickInput: document.getElementById('change-nick-input'),
+            promoCodeInput: document.getElementById('promo-code-input'),
+            btnEquipBox: document.getElementById('btn-equip-box'),
+            btnBuyBath: document.getElementById('btn-buy-bath'),
+            btnEquipBath: document.getElementById('btn-equip-bath'),
+            btnBuyDom: document.getElementById('btn-buy-dom'),
+            btnEquipDom: document.getElementById('btn-equip-dom'),
+            btnBuyTiv: document.getElementById('btn-buy-tiv'),
+            btnEquipTiv: document.getElementById('btn-equip-tiv'),
+            btnBuyTiv3: document.getElementById('btn-buy-tiv3'),
+            btnEquipTiv3: document.getElementById('btn-equip-tiv3')
+        };
+
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resize); resize();
+
+        const images = {};
+        const imageUrls = {
+            box: 'https://i.ibb.co/4vPhDmG/Picsart-26-06-15-12-43-57-973.png',
+            tiv1: 'https://i.ibb.co/JRMfszjC/Picsart-26-06-18-12-31-42-121.png',
+            bath: 'https://i.ibb.co/CsV0F2cW/Picsart-26-06-15-20-36-50-531.png',
+            dominator: 'https://i.ibb.co/5xGYzS6N/Picsart-26-06-14-22-09-50-949.png',
+            tiv: 'https://i.ibb.co/cGdt1s6/Picsart-26-06-14-22-08-51-635.png',
+            tiv1_gold: 'https://i.ibb.co/mF2xP8gf/Picsart-26-06-18-12-33-28-441.png',
+            tiv3: 'https://i.ibb.co/Rk4mYdzB/Picsart-26-06-18-12-12-48-758.png', 
+            tiv2_diamond: 'https://i.ibb.co/dwDqnbZ7/Picsart-26-06-18-12-38-08-578.png',
+            ef0: 'https://i.ibb.co/0R01rKVj/Picsart-26-06-15-20-37-43-950.png',
+            ef1: 'https://i.ibb.co/0yT5RxMF/Picsart-26-06-15-12-21-08-956.png',
+            ef2: 'https://i.ibb.co/twjrgGkb/Picsart-26-06-15-12-20-34-105.png',
+            ef3: 'https://i.ibb.co/NnyqwKBR/Picsart-26-06-14-22-10-34-948.png',
+            ef4: 'https://i.ibb.co/GQ2qJvck/Picsart-26-06-15-12-21-52-815.png',
+            ef5: 'https://i.ibb.co/mCwBrFhh/Picsart-26-06-15-12-24-40-977.png',
+            boss: 'https://i.ibb.co/cXhFN9NZ/Picsart-26-06-18-12-04-48-124.png', 
+            magma: 'https://i.ibb.co/LDSRN8fY/Picsart-26-06-18-12-05-32-512.png', 
+            blockText: 'https://i.ibb.co/WwwD2s9/Picsart-26-06-18-12-06-25-958.png' 
+        };
+
+        const carsData = {
+            box: { width: 100, height: 80, speedMult: 0.8, hitboxMult: 1.0, yOffset: 20 },
+            tiv1: { width: 150, height: 80, speedMult: 1.2, hitboxMult: 1.1, yOffset: 30 },
+            bath: { width: 110, height: 75, speedMult: 0.9, hitboxMult: 1.0, yOffset: 25 },
+            dominator: { width: 165, height: 75, speedMult: 1.0, hitboxMult: 1.0, yOffset: 35 },
+            tiv: { width: 180, height: 85, speedMult: 1.6, hitboxMult: 1.3, yOffset: 45 },
+            tiv1_gold: { width: 150, height: 80, speedMult: 1.4, hitboxMult: 1.1, yOffset: 30 },
+            tiv3: { width: 200, height: 95, speedMult: 1.8, hitboxMult: 1.3, yOffset: 50 },
+            tiv2_diamond: { width: 195, height: 90, speedMult: 2.2, hitboxMult: 1.4, yOffset: 48 }
+        };
+
+        for (let key in imageUrls) { 
+            images[key] = new Image(); images[key].src = imageUrls[key]; 
+            images[key].onload = function() {
+                if (carsData[key]) { carsData[key].height = carsData[key].width * (this.naturalHeight / this.naturalWidth); }
+            }
+        }
+
+        let money = 0; let interceptedCount = 0; let currentCar = 'box'; let nickname = "Охотник";
+        let bathUnlocked = false; let domUnlocked = false; let tivUnlocked = false; let tiv3Unlocked = false; 
+        
+        let rewardDay = 0; let lastClaimTime = 0;
+        let tiv1Unlocked = false; let tiv1GoldUnlocked = false; let tiv2DiamondUnlocked = false;
+        let usedCodes = [];
+
+        const rewardsData = [
+            500, 1000, 100, 200, 300, 10000, 'tiv1',
+            500, 1000, 100, 200, 300, 1000, 2000,
+            300, 400, 500, 1000, 1500, 2000, 2500,
+            3000, 4000, 'tiv1_gold', 500, 1000, 2000, 3000, 5000, 'tiv2_diamond'
+        ];
+
+        let gameState = 'menu'; let lastTime = 0; let hp = 100; let isDeployed = false; let deployTimer = 0; let deployCooldown = 0;
+        const player = { x: 100, y: 0, speed: 450, moveDir: 0 };
+        const tornadoes = []; let tornadoSpawnTimer = 0;
+        let bossMode = false; let bossTimer = 0; let boss = { x: 0, y: 0, width: 280, height: 280, moveTimer: 0 };
+        const magmas = []; let magmaTimer = 0; let blockTextTimer = 0;
+
+        const tornadoTypes = [
+            { type: 'ef0', reward: 15000, dmg: 20, prob: 0.50, scale: 0.8, speed: 150 },
+            { type: 'ef1', reward: 66666, dmg: 45, prob: 0.40, scale: 1.0, speed: 200 },
+            { type: 'ef2', reward: 333333, dmg: 65, prob: 0.30, scale: 1.2, speed: 280 },
+            { type: 'ef3', reward: 1000000, dmg: 75, prob: 0.15, scale: 1.5, speed: 360 },
+            { type: 'ef4', reward: 2333333, dmg: 100, prob: 0.10, scale: 1.8, speed: 450 },
+            { type: 'ef5', reward: 3333333, dmg: 200, prob: 0.05, scale: 2.3, speed: 550 }
+        ];
+
+        let mgTimerInterval, mgScore = 0, mgTimeLeft = 15, mgActive = false;
+
+        function saveGame() { 
+            localStorage.setItem('storm_chaser_save_v9', JSON.stringify({
+                money, interceptedCount, bathUnlocked, domUnlocked, tivUnlocked, tiv3Unlocked, currentCar, nickname,
+                rewardDay, lastClaimTime, tiv1Unlocked, tiv1GoldUnlocked, tiv2DiamondUnlocked, usedCodes
+            })); 
+        }
+
+        function loadGame() {
+            let save = JSON.parse(localStorage.getItem('storm_chaser_save_v9')) || JSON.parse(localStorage.getItem('storm_chaser_save_v8'));
+            if(save) { 
+                money = save.money || 0; interceptedCount = save.interceptedCount || 0;
+                bathUnlocked = save.bathUnlocked || false; domUnlocked = save.domUnlocked || false;
+                tivUnlocked = save.tivUnlocked || false; tiv3Unlocked = save.tiv3Unlocked || false; 
+                currentCar = save.currentCar || 'box'; nickname = save.nickname || "Охотник";
+                rewardDay = save.rewardDay || 0; lastClaimTime = save.lastClaimTime || 0;
+                tiv1Unlocked = save.tiv1Unlocked || false; tiv1GoldUnlocked = save.tiv1GoldUnlocked || false;
+                tiv2DiamondUnlocked = save.tiv2DiamondUnlocked || false; usedCodes = save.usedCodes || [];
+            }
+        }
+        loadGame();
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') player.moveDir = -1;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') player.moveDir = 1;
+            if (e.code === 'KeyQ' || e.code === 'Space') { e.preventDefault(); toggleDeploy(); }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (['ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD'].includes(e.code)) player.moveDir = 0;
+        });
+        canvas.addEventListener('touchstart', (e) => {
+            if (gameState !== 'playing') return;
+            if (e.touches[0].clientX < 180 && e.touches[0].clientY < 150) return; 
+            player.moveDir = (e.touches[0].clientX < canvas.width / 2) ? -1 : 1;
+        });
+        canvas.addEventListener('touchend', () => { player.moveDir = 0; });
+
+        function toggleDeploy() {
+            if (gameState !== 'playing') return;
+            if (!isDeployed) {
+                if (deployCooldown > 0) return;
+                isDeployed = true; deployTimer = 3.0; 
+                UI.deployBtn.innerText = "Undeploy"; UI.deployBtn.classList.add('deployed');
+                player.moveDir = 0;
+            } else { undeploy(); }
+        }
+
+        function undeploy() {
+            isDeployed = false; deployTimer = 0; deployCooldown = 2.0; 
+            UI.deployBtn.classList.remove('deployed'); UI.deployBtn.classList.add('cooldown');
+            UI.deployBtn.innerText = `КД ${deployCooldown.toFixed(1)}с`;
+        }
+
+        function getAvailableTornadoes() {
+            let allowedTypes = [];
+            if (money < 100000) allowedTypes = ['ef0', 'ef1'];
+            else if (money < 20000000) allowedTypes = ['ef0', 'ef1', 'ef2'];
+            else if (money < 40000000) allowedTypes = ['ef0', 'ef1', 'ef2', 'ef3'];
+            else if (money < 99000000) allowedTypes = ['ef0', 'ef1', 'ef2', 'ef3', 'ef4'];
+            else allowedTypes = ['ef0', 'ef1', 'ef2', 'ef3', 'ef4', 'ef5'];
+            return tornadoTypes.filter(t => allowedTypes.includes(t.type));
+        }
+
+        function startBossMode() {
+            bossMode = true; bossTimer = 60.0; tornadoes.length = 0; magmas.length = 0; blockTextTimer = 0;
+            boss.x = canvas.width - boss.width - 20; boss.y = canvas.height - boss.height - 80;
+            UI.warningSign.style.display = 'block'; UI.bossTimerDisplay.style.display = 'block';
+            setTimeout(() => { UI.warningSign.style.display = 'none'; }, 2000);
+        }
+
+        function spawnTornado() {
+            if (bossMode) return;
+            UI.warningSign.style.display = 'block';
+            setTimeout(() => {
+                UI.warningSign.style.display = 'none';
+                if (gameState !== 'playing' || bossMode) return;
+                let available = getAvailableTornadoes();
+                let totalProb = available.reduce((sum, t) => sum + t.prob, 0);
+                let rand = Math.random() * totalProb;
+                let cumulative = 0, selected = available[0];
+                for (let t of available) { cumulative += t.prob; if (rand <= cumulative) { selected = t; break; } }
+                let tSize = 120 * selected.scale * (0.85 + Math.random() * 0.30);
+                tornadoes.push({
+                    x: canvas.width + 50, y: canvas.height - tSize - 80, width: tSize, height: tSize,
+                    type: selected.type, reward: selected.reward, dmg: selected.dmg, speed: selected.speed * (0.80 + Math.random() * 0.40)
+                });
+            }, 1200);
+        }
+
+        function updateHUD() {
+            let moneyStr = "$" + money.toLocaleString('en-US');
+            UI.moneyDisplay.innerText = moneyStr; UI.hpDisplay.innerText = `Strength: ${hp}%`;
+            UI.shopMoney.innerText = moneyStr; UI.interceptsDisplay.innerText = `Caught: ${interceptedCount} / 500`;
+        }
+
+        function update(dt) {
+            if (gameState !== 'playing') return;
+            let carData = carsData[currentCar];
+
+            if (isDeployed) { deployTimer -= dt; if (deployTimer <= 0) undeploy(); }
+            else if (deployCooldown > 0) {
+                deployCooldown -= dt;
+                if (deployCooldown <= 0) { deployCooldown = 0; UI.deployBtn.classList.remove('cooldown'); UI.deployBtn.innerText = "Deploy"; }
+                else { UI.deployBtn.innerText = `КД ${deployCooldown.toFixed(1)}с`; }
+            }
+
+            if (!isDeployed) player.x += player.moveDir * player.speed * carData.speedMult * dt;
+            if (player.x < 0) player.x = 0;
+            if (player.x + carData.width > canvas.width) player.x = canvas.width - carData.width;
+            player.y = canvas.height - carData.height - 80 + carData.yOffset;
+
+            if (bossMode) {
+                bossTimer -= dt; UI.bossTimerDisplay.innerText = `Boss: ${bossTimer.toFixed(1)}с`;
+                if (bossTimer <= 0) {
+                    bossMode = false; UI.bossTimerDisplay.style.display = 'none';
+                    money += 500000000; interceptedCount = 0; saveGame(); updateHUD();
+                    alert("You survived! Prize: $500,000,000!"); return;
+                }
+                boss.moveTimer += dt; boss.y = (canvas.height - boss.height - 80) - Math.abs(Math.sin(boss.moveTimer * 1.5)) * 60;
+                magmaTimer -= dt;
+                if (magmaTimer <= 0) {
+                    magmas.push({ x: boss.x + 50, y: canvas.height - 160, width: 80, height: 80, speed: 550 + Math.random() * 250 });
+                    magmaTimer = 1.0 + Math.random() * 0.8;
+                }
+                if (blockTextTimer > 0) blockTextTimer -= dt;
+
+                for (let i = magmas.length - 1; i >= 0; i--) {
+                    let m = magmas[i]; m.x -= m.speed * dt;
+                    let hitW = carData.width * carData.hitboxMult;
+                    if (player.x < m.x + m.width && player.x + hitW > m.x && player.y < m.y + m.height && player.y + carData.height > m.y) {
+                        if (isDeployed && currentCar === 'tiv3') { magmas.splice(i, 1); blockTextTimer = 0.8; }
+                        else {
+                            hp -= 1000; magmas.splice(i, 1);
+                            if (hp <= 0) { hp = 0; updateHUD(); alert("Press F! You need deploy on TIV 3."); endGame(); }
+                        }
+                    } else if (m.x + m.width < 0) magmas.splice(i, 1);
+                }
+            } else {
+                tornadoSpawnTimer -= dt; if (tornadoSpawnTimer <= 0) { spawnTornado(); tornadoSpawnTimer = 3.5 + Math.random() * 3; }
+                for (let i = tornadoes.length - 1; i >= 0; i--) {
+                    let t = tornadoes[i]; t.x -= t.speed * dt;
+                    let hitW = carData.width * carData.hitboxMult;
+                    if (player.x < t.x + t.width && player.x + hitW > t.x && player.y < t.y + t.height && player.y + carData.height > t.y) {
+                        if (isDeployed) {
+                            money += t.reward; interceptedCount++; tornadoes.splice(i, 1); saveGame(); updateHUD();
+                            if (interceptedCount >= 500) { startBossMode(); }
+                        } else {
+                            hp -= t.dmg; player.x -= 200; if (player.x < 0) player.x = 0; tornadoes.splice(i, 1); saveGame(); updateHUD();
+                            if (hp <= 0) { hp = 0; updateHUD(); alert("Press F!"); endGame(); }
+                        }
+                        continue;
+                    }
+                    if (t.x + t.width < 0) tornadoes.splice(i, 1);
+                }
+            }
+        }
+
+        function draw() {
+            let grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, bossMode ? '#301010' : '#2c3e50'); grad.addColorStop(1, bossMode ? '#502020' : '#7f8c8d');
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (gameState !== 'playing') return;
+
+            ctx.fillStyle = bossMode ? '#3d2b2b' : '#555d66'; ctx.fillRect(0, canvas.height - 80, canvas.width, 80);
+            if (bossMode) {
+                if (images['boss']) ctx.drawImage(images['boss'], boss.x, boss.y, boss.width, boss.height);
+                for (let m of magmas) { if (images['magma']) ctx.drawImage(images['magma'], m.x, m.y, m.width, m.height); }
+                if (blockTextTimer > 0 && images['blockText']) { ctx.drawImage(images['blockText'], canvas.width/2 - 150, canvas.height/2 - 100, 300, 100); }
+            } else {
+                for (let t of tornadoes) { if (images[t.type]) ctx.drawImage(images[t.type], t.x, t.y, t.width, t.height); }
+            }
+
+            if (images[currentCar]) {
+                let carData = carsData[currentCar]; ctx.save();
+                if (isDeployed) { ctx.shadowBlur = 15; ctx.shadowColor = (currentCar === 'tiv3' && bossMode) ? "#ff9f43" : "#2ecc71"; }
+                
+                if (['tiv', 'tiv1', 'tiv1_gold'].includes(currentCar)) {
+                    ctx.translate(player.x + carData.width, player.y); 
+                    ctx.scale(-1, 1); 
+                    ctx.drawImage(images[currentCar], 0, 0, carData.width, carData.height);
+                } else { 
+                    ctx.drawImage(images[currentCar], player.x, player.y, carData.width, carData.height); 
+                }
+                ctx.restore();
+            }
+        }
+
+        function loop(timestamp) {
+            let dt = (timestamp - lastTime) / 1000; if (dt > 0.1) dt = 0.1;
+            lastTime = timestamp; update(dt); draw();
+            if (gameState === 'playing') requestAnimationFrame(loop);
+        }
+
+        function startGame() {
+            UI.mainMenu.classList.remove('active');
+            UI.moneyDisplay.style.display = 'block'; UI.interceptsDisplay.style.display = 'block'; UI.hpDisplay.style.display = 'block'; UI.deployBtn.style.display = 'block';
+            gameState = 'playing'; hp = 100; isDeployed = false; bossMode = false; deployTimer = 0; deployCooldown = 0; blockTextTimer = 0;
+            UI.bossTimerDisplay.style.display = 'none'; UI.deployBtn.innerText = "Deploy"; UI.deployBtn.classList.remove('deployed', 'cooldown');
+            tornadoes.length = 0; magmas.length = 0; tornadoSpawnTimer = 2; player.x = 100; lastTime = performance.now();
+            updateHUD(); requestAnimationFrame(loop);
+        }
+
+        function endGame() {
+            gameState = 'menu'; bossMode = false;
+            UI.moneyDisplay.style.display = 'none'; UI.interceptsDisplay.style.display = 'none'; UI.bossTimerDisplay.style.display = 'none'; UI.hpDisplay.style.display = 'none'; UI.deployBtn.style.display = 'none';
+            UI.mainMenu.classList.add('active');
+        }
+
+        function openMiniGame() { UI.mainMenu.classList.remove('active'); document.getElementById('mg-menu').classList.add('active'); }
+        function closeMiniGame() { if(mgActive) return; document.getElementById('mg-menu').classList.remove('active'); UI.mainMenu.classList.add('active'); }
+        function startMiniGame() {
+            mgScore = 0; mgTimeLeft = 15; mgActive = true;
+            document.getElementById('mg-score').innerText = "Score: 0"; document.getElementById('mg-time').innerText = mgTimeLeft;
+            document.getElementById('mg-start-btn').disabled = true; document.getElementById('mg-back-btn').disabled = true;
+            moveLightning();
+            mgTimerInterval = setInterval(() => {
+                mgTimeLeft--; document.getElementById('mg-time').innerText = mgTimeLeft;
+                if(mgTimeLeft <= 0) {
+                    clearInterval(mgTimerInterval); mgActive = false; document.getElementById('mg-target').style.display = 'none';
+                    let totalPrize = mgScore * 500000; money += totalPrize;
+                    alert(`Time is up! Caught: ${mgScore}. Income: +$${totalPrize.toLocaleString('en-US')}!`);
+                    document.getElementById('mg-start-btn').disabled = false; document.getElementById('mg-back-btn').disabled = false;
+                    saveGame(); updateHUD();
+                }
+            }, 1000);
+        }
+        function moveLightning() {
+            if(!mgActive) return;
+            let target = document.getElementById('mg-target');
+            target.style.left = Math.floor(Math.random() * 220) + 'px'; target.style.top = Math.floor(Math.random() * 220) + 'px'; target.style.display = 'flex';
+        }
+        function hitLightning() { if(!mgActive) return; mgScore++; document.getElementById('mg-score').innerText = `Score: ${mgScore}`; moveLightning(); }
+
+        function openRewards() { UI.mainMenu.classList.remove('active'); document.getElementById('rewards-menu').classList.add('active'); updateRewardsUI(); }
+        function closeRewards() { document.getElementById('rewards-menu').classList.remove('active'); UI.mainMenu.classList.add('active'); }
+        
+        function updateRewardsUI() {
+            let nextDayIndex = rewardDay % 30;
+            document.getElementById('reward-days-passed').innerText = `Gifts claimed: ${rewardDay} / 30 (Now: ${nextDayIndex + 1})`;
+            let currentReward = rewardsData[nextDayIndex];
+            let desc = document.getElementById('reward-desc'); let img = document.getElementById('reward-img'); let claimBtn = document.getElementById('claim-reward-btn');
+
+            if (typeof currentReward === 'number') { desc.innerText = `+$${currentReward.toLocaleString('en-US')}`; img.style.display = 'none'; }
+            else if (currentReward === 'tiv1') { desc.innerText = "Storm chaser vehicle TIV 1"; img.src = imageUrls.tiv1; img.style.display = 'block'; }
+            else if (currentReward === 'tiv1_gold') { desc.innerText = "Gold TIV 1 (Skin)"; img.src = imageUrls.tiv1_gold; img.style.display = 'block'; }
+            else if (currentReward === 'tiv2_diamond') { desc.innerText = "Diamond TIV 2"; img.src = imageUrls.tiv2_diamond; img.style.display = 'block'; }
+
+            let timePassed = Date.now() - lastClaimTime;
+            if (timePassed < 86400000) {
+                claimBtn.disabled = true; let hoursLeft = Math.ceil((86400000 - timePassed) / 3600000); claimBtn.innerText = `Wait ${hoursLeft}h`;
+            } else { claimBtn.disabled = false; claimBtn.innerText = "Claim"; }
+        }
+
+        function claimDailyReward() {
+            let timePassed = Date.now() - lastClaimTime; if (timePassed < 86400000) return;
+            let nextDayIndex = rewardDay % 30; let currentReward = rewardsData[nextDayIndex];
+
+            if (typeof currentReward === 'number') { money += currentReward; alert(`You took $${currentReward.toLocaleString('en-US')}!`); }
+            else if (currentReward === 'tiv1') { tiv1Unlocked = true; alert("You claimed exclusive TIV 1!"); }
+            else if (currentReward === 'tiv1_gold') { tiv1GoldUnlocked = true; alert("Opened exclusive Gold TIV 1!"); }
+            else if (currentReward === 'tiv2_diamond') { tiv2DiamondUnlocked = true; alert("LEGENDARY DAY 30! Diamond TIV 2 added in the shop!"); }
+
+            rewardDay++; lastClaimTime = Date.now(); saveGame(); updateHUD(); updateRewardsUI();
+        }
+
+        function openAccount() { UI.mainMenu.classList.remove('active'); UI.accountMenu.classList.add('active'); UI.profileName.innerText = nickname; UI.resetPass.value = ''; UI.changeNickInput.value = ''; UI.promoCodeInput.value = ''; }
+        function closeAccount() { UI.accountMenu.classList.remove('active'); UI.mainMenu.classList.add('active'); }
+        
+        function changeNickname() {
+            let newNick = UI.changeNickInput.value.trim();
+            if(!newNick) return alert("Enter name!");
+            if(money >= 5000) { money -= 5000; nickname = newNick; UI.profileName.innerText = nickname; saveGame(); updateHUD(); alert(`Nickname changed to "${nickname}"`); } 
+            else { alert("Not enough money! You need $5,000"); }
+        }
+
+        function activatePromo() {
+            let code = UI.promoCodeInput.value.trim();
+            if(!code) return;
+
+            if(usedCodes.includes(code)) {
+                alert("You already used this code!");
+                return;
+            }
+
+            if(code === 'START') {
+                money += 100000;
+                domUnlocked = true;
+                usedCodes.push(code);
+                saveGame(); updateHUD();
+                alert("Code activated! Claimed $100,000 and Dominator 2!");
+                UI.promoCodeInput.value = '';
+            } else if(code === 'sv_give_1337_tiv2almazversionfree') {
+                tiv2DiamondUnlocked = true;
+                usedCodes.push(code);
+                saveGame();
+                UI.promoCodeInput.value = ''; 
+            } else if(code === '67') {
+                money += 67000000000;
+                usedCodes.push(code);
+                saveGame(); updateHUD();
+                alert("Secret code: Claimed $67,000,000,000!");
+                UI.promoCodeInput.value = '';
+            } else {
+                alert("This code is incorrect or already used!");
+            }
+        }
+
+        function resetProgress() {
+            if (UI.resetPass.value.trim().toLowerCase() === 'yes') {
+                if(confirm("Delete your progress?")) {
+                    money = 0; interceptedCount = 0; currentCar = 'box'; nickname = "Chaser";
+                    bathUnlocked = false; domUnlocked = false; tivUnlocked = false; tiv3Unlocked = false; 
+                    rewardDay = 0; lastClaimTime = 0; tiv1Unlocked = false; tiv1GoldUnlocked = false; tiv2DiamondUnlocked = false;
+                    usedCodes = []; saveGame(); updateHUD(); alert("Progress cleared. Goodbye!"); closeAccount();
+                }
+            } else { alert("Write the word 'yes' to confirm!"); }
+        }
+
+        function openShop() { updateHUD(); UI.mainMenu.classList.remove('active'); UI.shopMenu.classList.add('active'); updateShopButtons(); }
+        function closeShop() { UI.shopMenu.classList.remove('active'); UI.mainMenu.classList.add('active'); }
+        
+        function buyCar(car, price) {
+            if (money >= price) {
+                money -= price; 
+                if (car === 'bath') bathUnlocked = true; if (car === 'dominator') domUnlocked = true;
+                if (car === 'tiv') tivUnlocked = true; if (car === 'tiv3') tiv3Unlocked = true;
+                if (car === 'tiv1') tiv1Unlocked = true;
+                currentCar = car; saveGame(); updateHUD(); updateShopButtons();
+            } else { alert("Not enough money! Need $" + price.toLocaleString('en-US')); }
+        }
+        function equipCar(car) { currentCar = car; saveGame(); updateShopButtons(); }
+
+        function updateShopButtons() {
+            UI.btnEquipBox.innerText = (currentCar === 'box') ? "Selected" : "Select"; UI.btnEquipBox.disabled = (currentCar === 'box');
+            
+            if(tiv1Unlocked) { 
+                document.getElementById('btn-buy-tiv1').style.display = 'none';
+                let btn = document.getElementById('btn-equip-tiv1');
+                btn.style.display = 'inline-block';
+                btn.innerText = (currentCar === 'tiv1') ? "Selected" : "Select"; 
+                btn.disabled = (currentCar === 'tiv1'); 
+            } else {
+                document.getElementById('btn-buy-tiv1').style.display = 'inline-block';
+                document.getElementById('btn-equip-tiv1').style.display = 'none';
+            }
+            
+            document.getElementById('shop-item-tiv1gold').style.display = tiv1GoldUnlocked ? 'block' : 'none';
+            if(tiv1GoldUnlocked) { let btn = document.getElementById('btn-equip-tiv1gold'); btn.innerText = (currentCar === 'tiv1_gold') ? "Selected" : "Select"; btn.disabled = (currentCar === 'tiv1_gold'); }
+            
+            document.getElementById('shop-item-tiv2diamond').style.display = tiv2DiamondUnlocked ? 'block' : 'none';
+            if(tiv2DiamondUnlocked) { let btn = document.getElementById('btn-equip-tiv2diamond'); btn.innerText = (currentCar === 'tiv2_diamond') ? "Selected" : "Select"; btn.disabled = (currentCar === 'tiv2_diamond'); }
+
+            if (bathUnlocked) { UI.btnBuyBath.style.display = 'none'; UI.btnEquipBath.style.display = 'inline-block'; UI.btnEquipBath.innerText = (currentCar === 'bath') ? "Selected" : "Select"; UI.btnEquipBath.disabled = (currentCar === 'bath'); }
+            if (domUnlocked) { UI.btnBuyDom.style.display = 'none'; UI.btnEquipDom.style.display = 'inline-block'; UI.btnEquipDom.innerText = (currentCar === 'dominator') ? "Selected" : "Select"; UI.btnEquipDom.disabled = (currentCar === 'dominator'); }
+            if (tivUnlocked) { UI.btnBuyTiv.style.display = 'none'; UI.btnEquipTiv.style.display = 'inline-block'; UI.btnEquipTiv.innerText = (currentCar === 'tiv') ? "Selected" : "Select"; UI.btnEquipTiv.disabled = (currentCar === 'tiv'); }
+            if (tiv3Unlocked) { UI.btnBuyTiv3.style.display = 'none'; UI.btnEquipTiv3.style.display = 'inline-block'; UI.btnEquipTiv3.innerText = (currentCar === 'tiv3') ? "Selected" : "Select"; UI.btnEquipTiv3.disabled = (currentCar === 'tiv3'); }
+        }
+    </script>
+</body>
+</html>
